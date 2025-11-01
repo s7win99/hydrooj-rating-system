@@ -1,0 +1,269 @@
+<li class="section__tab-item">
+  <h1 class="section__tab-title">{{ _('Rating') }}</h1>
+  <style>
+    /* Rating 数值展示样式 */
+    .rating-value { font-weight:bold; }
+    .rating-red { color:#ff0000; }
+    .rating-orange { color:#ff8c00; }
+    .rating-yellow { color:#ffd700; }
+    .rating-blue { color:#0080ff; }
+    .rating-purple { color:#8000ff; }
+    .rating-green { color:#00c853; }
+    .rating-gray { color:#808080; }
+
+    /* 图表容器样式优化 */
+    .chart-container { 
+      height:400px; 
+      margin-top: 20px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    /* Rating 历史表格样式 */
+    .rating-history-table { 
+      margin-top:24px; 
+    }
+    
+    /* Rating 统计卡片美化 */
+    .balancer {
+      margin-bottom: 20px;
+    }
+    
+    .balancer__body {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .balancer__body:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .numbox {
+      padding: 20px;
+    }
+    
+    .numbox__num {
+      font-size: 2.2em;
+      margin-bottom: 8px;
+    }
+    
+    .numbox__text {
+      font-size: 0.9em;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  </style>
+  <div class="section__tab-main">
+    <div class="section__body">
+      <div class="balancer">
+        <div class="balancer__body">
+          <div class="numbox">
+            <div class="numbox__num medium rating-value" id="rating-current-{{ udoc._id }}">--</div>
+            <div class="numbox__text">{{ _('Current Rating') }}</div>
+          </div>
+        </div>
+        <div class="balancer__body">
+          <div class="numbox">
+            <div class="numbox__num medium rating-value" id="rating-max-{{ udoc._id }}">--</div>
+            <div class="numbox__text">{{ _('Max Rating') }}</div>
+          </div>
+        </div>
+        <div class="balancer__body">
+          <div class="numbox">
+            <div class="numbox__num medium" id="rating-rank-{{ udoc._id }}">--</div>
+            <div class="numbox__text">{{ _('Rank') }}</div>
+          </div>
+        </div>
+        <div class="balancer__body">
+          <div class="numbox">
+            <div class="numbox__num medium" id="rating-contests-{{ udoc._id }}">--</div>
+            <div class="numbox__text">{{ _('Contests') }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section__body no-media">
+      <div class="chart-container">
+        <canvas id="ratingChartUser-{{ udoc._id }}"></canvas>
+      </div>
+    </div>
+
+    <div class="section__body rating-history-table" id="rating-history-{{ udoc._id }}" style="display:none">
+      <h3 class="section__title" style="margin:0 0 8px;">{{ _('Contest History') }}</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ _('Date') }}</th>
+            <th>{{ _('Contest') }}</th>
+            <th>{{ _('Rank') }}</th>
+            <th>{{ _('Rating Change') }}</th>
+            <th>{{ _('New Rating') }}</th>
+          </tr>
+        </thead>
+        <tbody id="rating-history-body-{{ udoc._id }}"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    (function() {
+      function getRatingColor(r) {
+        if (r >= 2400) return '#ff0000';
+        if (r >= 2100) return '#ff8c00';
+        if (r >= 1900) return '#ffd700';
+        if (r >= 1600) return '#0080ff';
+        if (r >= 1400) return '#8000ff';
+        if (r >= 1200) return '#00c853';
+        return '#808080';
+      }
+      function getRatingClass(r) {
+        if (r >= 2400) return 'rating-red';
+        if (r >= 2100) return 'rating-orange';
+        if (r >= 1900) return 'rating-yellow';
+        if (r >= 1600) return 'rating-blue';
+        if (r >= 1400) return 'rating-purple';
+        if (r >= 1200) return 'rating-green';
+        return 'rating-gray';
+      }
+
+      var uid = {{ udoc._id }};
+      fetch('/api/rating/user/' + uid)
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+          var rating = data.rating || { rating: 1500, maxRating: 1500, contestCount: 0 };
+          var rank = data.rank || 0;
+          var history = data.history || [];
+
+          var curEl = document.getElementById('rating-current-' + uid);
+          curEl.textContent = rating.rating;
+          curEl.classList.add(getRatingClass(rating.rating));
+          var maxEl = document.getElementById('rating-max-' + uid);
+          maxEl.textContent = rating.maxRating;
+          maxEl.classList.add(getRatingClass(rating.maxRating));
+          document.getElementById('rating-rank-' + uid).textContent = rank || '--';
+          document.getElementById('rating-contests-' + uid).textContent = rating.contestCount || 0;
+
+          var ctx = document.getElementById('ratingChartUser-' + uid).getContext('2d');
+          var chartData = [];
+          for (var i = 0; i < history.length; i++) {
+            chartData.push({ x: i+1, y: history[i].newRating, contestName: history[i].contestName, rank: history[i].rank, date: history[i].date });
+          }
+          if (!history.length) chartData.push({ x: 0, y: rating.rating });
+
+          new Chart(ctx, {
+            type: 'line',
+            data: {
+              datasets: [{
+                label: 'Rating',
+                data: chartData,
+                borderColor: '#007bff',
+                backgroundColor: 'rgba(0, 123, 255, 0.08)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.25,
+                pointBackgroundColor: function(context) {
+                  var rating = context.parsed.y;
+                  return getRatingColor(rating);
+                },
+                pointBorderColor: '#fff',
+                pointBorderWidth: 3,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                pointHoverBorderWidth: 4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                tooltip: {
+                  backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                  titleColor: '#fff',
+                  bodyColor: '#fff',
+                  borderColor: '#007bff',
+                  borderWidth: 1,
+                  cornerRadius: 8,
+                  displayColors: false,
+                  callbacks: {
+                    title: function(context){ var d = chartData[context[0].dataIndex]; return d.contestName || 'Contest #' + (context[0].dataIndex + 1); },
+                    label: function(context){ 
+                      var d = chartData[context.dataIndex]; 
+                      var lines = ['Rating: ' + context.parsed.y];
+                      if (d.rank) lines.push('Rank: ' + d.rank);
+                      if (d.date) lines.push('Date: ' + new Date(d.date).toLocaleDateString());
+                      return lines;
+                    }
+                  }
+                },
+                legend: { display:false }
+              },
+              scales: {
+                x: {
+                  type: 'linear',
+                  position: 'bottom',
+                  title: { 
+                    display:true, 
+                    text:'Contest Number',
+                    color: '#666',
+                    font: { size: 14, weight: 'bold' }
+                  },
+                  ticks: { 
+                    stepSize: 1, 
+                    color: '#666',
+                    callback: function(value){ return value === 0 ? 'Start' : value; } 
+                  },
+                  grid: {
+                    color: 'rgba(0, 0, 0, 0.1)',
+                    lineWidth: 1
+                  }
+                },
+                y: {
+                  title: { 
+                    display:true, 
+                    text:'Rating',
+                    color: '#666',
+                    font: { size: 14, weight: 'bold' }
+                  },
+                  min: Math.max(0, Math.min.apply(null, chartData.map(function(d){return d.y;})) - 100),
+                  max: Math.max.apply(null, chartData.map(function(d){return d.y;})) + 100,
+                  ticks: {
+                    color: '#666'
+                  },
+                  grid: {
+                    color: 'rgba(0, 0, 0, 0.1)',
+                    lineWidth: 1
+                  }
+                }
+              },
+              interaction: { intersect:false, mode:'index' }
+            }
+          });
+
+          // 填充历史表格
+          if (history.length) {
+            document.getElementById('rating-history-' + uid).style.display = '';
+            var tbody = document.getElementById('rating-history-body-' + uid);
+            history.forEach(function(rec) {
+              var tr = document.createElement('tr');
+              var change = rec.newRating - rec.oldRating;
+              tr.innerHTML = '<td>' + new Date(rec.date).toLocaleDateString() + '</td>' +
+                '<td>' + (rec.contestName || '') + '</td>' +
+                '<td>' + (rec.rank || 0) + '</td>' +
+                '<td class="rating-value ' + (change>0?'rating-green':(change<0?'rating-orange':'rating-gray')) + '">' + (change>0?('+'+change):change) + '</td>' +
+                '<td class="rating-value">' + rec.newRating + '</td>';
+              tbody.appendChild(tr);
+            });
+          }
+        })
+        .catch(function(e){ console.error('Load user rating failed', e); });
+    })();
+  </script>
+</li>
