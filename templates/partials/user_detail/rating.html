@@ -138,7 +138,7 @@
       fetch('/api/rating/user/' + uid)
         .then(function(res){ return res.json(); })
         .then(function(data){
-          var rating = data.rating || { rating: 1500, maxRating: 1500, contestCount: 0 };
+          var rating = data.rating || { rating: 1000, maxRating: 1000, contestCount: 0 };
           var rank = data.rank || 0;
           var history = data.history || [];
 
@@ -152,11 +152,11 @@
           document.getElementById('rating-contests-' + uid).textContent = rating.contestCount || 0;
 
           var ctx = document.getElementById('ratingChartUser-' + uid).getContext('2d');
-          var chartData = [];
+          var chartData = [{ x: 0, y: 1000, contestName: 'Initial' }];
           for (var i = 0; i < history.length; i++) {
             chartData.push({ x: i+1, y: history[i].newRating, contestName: history[i].contestName, rank: history[i].rank, date: history[i].date });
           }
-          if (!history.length) chartData.push({ x: 0, y: rating.rating });
+          if (!history.length) chartData[0].y = rating.rating;
 
           new Chart(ctx, {
             type: 'line',

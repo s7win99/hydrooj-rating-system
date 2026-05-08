@@ -201,8 +201,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const ctx = document.getElementById('ratingChart').getContext('2d');
   const historyData = {{ history | tojson }};
   
-  // 添加初始Rating点（1500）
-  const chartData = [{ x: 0, y: 1500, contestName: 'Initial' }];
+  // 添加初始Rating点（1000）
+  const chartData = [{ x: 0, y: 1000, contestName: 'Initial' }];
   
   historyData.forEach((record, index) => {
     chartData.push({

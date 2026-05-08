@@ -235,10 +235,12 @@ async function loadStatistics() {
   try {
     // 这里应该调用API获取统计信息
     // 暂时使用模拟数据
-    document.getElementById('totalUsers').textContent = '1,234';
-    document.getElementById('avgRating').textContent = '1,567';
-    document.getElementById('maxRating').textContent = '2,456';
-    document.getElementById('activeUsers').textContent = '456';
+    const response = await fetch('{{ url("rating_stats") }}');
+    const data = await response.json();
+    document.getElementById('totalUsers').textContent = data.totalUsers ?? '-';
+    document.getElementById('avgRating').textContent = data.avgRating ? Math.round(data.avgRating) : '0';
+    document.getElementById('maxRating').textContent = data.maxRating ?? '0';
+    document.getElementById('activeUsers').textContent = data.activeUsers ?? '0';
   } catch (error) {
     console.error('Failed to load statistics:', error);
   }

@@ -89,7 +89,7 @@ HydroOJ Rating System Plugin 是一个为 HydroOJ 在线评测系统开发的评
 ```bash
 sudo su
 cd /root/.hydro/
-git clone https://github.com/SummerofOrange/hydrooj-rating-system
+git clone https://github.com/s7win99/hydrooj-rating-system
 hydrooj addon add /root/.hydro/hydrooj-rating-system
 pm2 restart hydrooj
 
