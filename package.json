@@ -3,8 +3,8 @@
     "version": "1.0.0",
     "description": "Rating system plugin for HydroOJ with user rating rankings and history",
     "main": "index.ts",
-    "repository": "https://github.com/SummerofOrange/hydrooj-rating-system",
-    "author": "Orange",
+    "repository": "https://github.com/s7win99/hydrooj-rating-system",
+    "author": "s7win99",
     "license": "MIT",
     "dependencies": {
         "hydrooj": "*"

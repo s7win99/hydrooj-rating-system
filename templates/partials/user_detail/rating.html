@@ -5,10 +5,10 @@
     .rating-value { font-weight:bold; }
     .rating-red { color:#ff0000; }
     .rating-orange { color:#ff8c00; }
-    .rating-yellow { color:#ffd700; }
-    .rating-blue { color:#0080ff; }
-    .rating-purple { color:#8000ff; }
-    .rating-green { color:#00c853; }
+    .rating-purple { color:#aa00aa; }
+    .rating-blue { color:#0000ff; }
+    .rating-cyan { color:#03a89e; }
+    .rating-green { color:#008000; }
     .rating-gray { color:#808080; }
 
     /* 图表容器样式优化 */
@@ -118,18 +118,18 @@
       function getRatingColor(r) {
         if (r >= 2400) return '#ff0000';
         if (r >= 2100) return '#ff8c00';
-        if (r >= 1900) return '#ffd700';
-        if (r >= 1600) return '#0080ff';
-        if (r >= 1400) return '#8000ff';
-        if (r >= 1200) return '#00c853';
+        if (r >= 1900) return '#aa00aa';
+        if (r >= 1600) return '#0000ff';
+        if (r >= 1400) return '#03a89e';
+        if (r >= 1200) return '#008000';
         return '#808080';
       }
       function getRatingClass(r) {
         if (r >= 2400) return 'rating-red';
         if (r >= 2100) return 'rating-orange';
-        if (r >= 1900) return 'rating-yellow';
+        if (r >= 1900) return 'rating-purple';
         if (r >= 1600) return 'rating-blue';
-        if (r >= 1400) return 'rating-purple';
+        if (r >= 1400) return 'rating-cyan';
         if (r >= 1200) return 'rating-green';
         return 'rating-gray';
       }

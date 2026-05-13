@@ -159,10 +159,10 @@
 /* Rating 颜色 */
 .rating-red { color: #ff0000; }
 .rating-orange { color: #ff8c00; }
-.rating-yellow { color: #ffd700; }
-.rating-blue { color: #0080ff; }
-.rating-purple { color: #8000ff; }
-.rating-green { color: #00ff00; }
+.rating-purple { color: #aa00aa; }
+.rating-blue { color: #0000ff; }
+.rating-cyan { color: #03a89e; }
+.rating-green { color: #008000; }
 .rating-gray { color: #808080; }
 </style>
 
@@ -171,19 +171,19 @@
 function getRatingColor(rating) {
   if (rating >= 2400) return '#ff0000';
   if (rating >= 2100) return '#ff8c00';
-  if (rating >= 1900) return '#ffd700';
-  if (rating >= 1600) return '#0080ff';
-  if (rating >= 1400) return '#8000ff';
-  if (rating >= 1200) return '#00ff00';
+  if (rating >= 1900) return '#aa00aa';
+  if (rating >= 1600) return '#0000ff';
+  if (rating >= 1400) return '#03a89e';
+  if (rating >= 1200) return '#008000';
   return '#808080';
 }
 
 function getRatingColorClass(rating) {
   if (rating >= 2400) return 'rating-red';
   if (rating >= 2100) return 'rating-orange';
-  if (rating >= 1900) return 'rating-yellow';
+  if (rating >= 1900) return 'rating-purple';
   if (rating >= 1600) return 'rating-blue';
-  if (rating >= 1400) return 'rating-purple';
+  if (rating >= 1400) return 'rating-cyan';
   if (rating >= 1200) return 'rating-green';
   return 'rating-gray';
 }

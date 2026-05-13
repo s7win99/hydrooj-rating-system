@@ -1,0 +1,379 @@
+{% extends "layout/basic.html" %}
+
+{% block content %}
+<div id="rating-center-root" class="row rating-center-page" data-sticky-parent>
+  <div class="medium-9 columns">
+    <div class="section">
+      <div class="section__header">
+        <div>
+          <h1 class="section__title">{{ _('Rating Management Center') }}</h1>
+        </div>
+      </div>
+      <div class="section__body">
+        <div id="rating-center-tabs" class="rating-center-tabs">
+          <a href="{{ url('manage_rating_center', query={tab:'manual'}) }}" class="rating-center-tab{% if activeTab == 'manual' %} is-active{% endif %}">{{ _('Manual Update') }}</a>
+          <a href="{{ url('manage_rating_center', query={tab:'contest'}) }}" class="rating-center-tab{% if activeTab == 'contest' %} is-active{% endif %}">{{ _('Contest Rating Compute') }}</a>
+          <a href="{{ url('manage_rating_center', query={tab:'users'}) }}" class="rating-center-tab{% if activeTab == 'users' %} is-active{% endif %}">{{ _('User Rating Management') }}</a>
+        </div>
+
+        <dl id="rating-center-properties" class="rating-center-properties-inline">
+          <div class="rating-center-properties-inline__item">
+            <dt>{{ _('Total Users') }}</dt>
+            <dd>{{ stats.totalUsers }}</dd>
+          </div>
+          <div class="rating-center-properties-inline__item">
+            <dt>{{ _('Rated Users') }}</dt>
+            <dd>{{ stats.ratedUsers }}</dd>
+          </div>
+          <div class="rating-center-properties-inline__item">
+            <dt>{{ _('Users With Contests') }}</dt>
+            <dd>{{ stats.contestUsers }}</dd>
+          </div>
+          <div class="rating-center-properties-inline__item">
+            <dt>{{ _('Average Rating') }}</dt>
+            <dd>{{ stats.avgRating|round }}</dd>
+          </div>
+          <div class="rating-center-properties-inline__item">
+            <dt>{{ _('Highest Rating') }}</dt>
+            <dd>{{ stats.maxRating }}</dd>
+          </div>
+        </dl>
+
+        <ul id="rating-center-tips" class="rating-center-tips-inline">
+          {% if activeTab == 'manual' %}
+            <li>{{ _('Manual rating updates do not increase contest count unless you explicitly check the option.') }}</li>
+            <li>{{ _('The leaderboard only includes users whose contest count is greater than zero.') }}</li>
+          {% elif activeTab == 'contest' %}
+            <li>{{ _('CSV files must include # (rank) and username columns. Only users with submissions are included, and rank 0 entries are excluded.') }}</li>
+            <li>{{ _('Revert the most recent rating operation (contest import or manual update)') }}</li>
+          {% elif activeTab == 'users' %}
+            <li>{{ _('The leaderboard only includes users whose contest count is greater than zero.') }}</li>
+            <li>{{ _('The homepage rating module only shows the top N users configured in homepage settings.') }}</li>
+          {% endif %}
+        </ul>
+
+        <div id="rating-center-main" class="rating-center-content">
+          {% if activeTab == 'manual' %}
+            {% include "partials/rating_admin/manual.html" %}
+          {% elif activeTab == 'contest' %}
+            {% include "partials/rating_admin/contest.html" %}
+          {% elif activeTab == 'users' %}
+            {% include "partials/rating_admin/users.html" %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="medium-3 columns">
+    <div data-sticky="large">
+      <div class="section side">
+        <ol class="menu">
+          <li class="menu__item">
+            <div class="menu__link expandable">
+              <span class="icon icon-info"></span> {{ _('Properties') }}
+            </div>
+            <ol class="menu collapsed">
+              {%- for item in ui.getNodes('ControlPanel') -%}
+                {{ sidemenu.render_item(item.icon, item.name) }}
+              {%- endfor -%}
+            </ol>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.rating-center-page .section__header {
+  align-items: flex-start;
+}
+
+.rating-center-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.rating-center-properties-inline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.rating-center-properties-inline__item {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.rating-center-properties-inline dt {
+  margin: 0 0 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rating-center-properties-inline dd {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rating-center-tips-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.rating-center-tips-inline li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.rating-center-tips-inline li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.68em;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.rating-center-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  border: 1px solid #d7deea;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.rating-center-tab:hover {
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+.rating-center-tab.is-active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
+}
+
+.rating-center-content {
+  min-height: 220px;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.rating-center-page .manage-section {
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.rating-center-page .manage-section h3 {
+  margin: 0 0 14px;
+  color: #1e293b;
+  font-size: 18px;
+}
+
+.rating-center-page .manage-section + .manage-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #edf2f7;
+}
+
+.rating-center-page .button {
+  border-radius: 8px;
+}
+
+.rating-center-page .user-table,
+.rating-center-page .preview-table,
+.rating-center-page .participants-table {
+  font-size: 14px;
+}
+
+.rating-center-page .user-table-container,
+.rating-center-page .preview-table-container {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#rating-center-root.is-loading .rating-center-content {
+  opacity: 0.38;
+  transform: translateY(4px);
+}
+
+#rating-center-root.is-loading .rating-center-tabs {
+  pointer-events: none;
+}
+
+.rating-center-content.is-entering,
+#rating-center-root.is-entering .rating-center-content {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@media (max-width: 768px) {
+  .rating-center-properties-inline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rating-center-tabs {
+    gap: 8px;
+  }
+
+  .rating-center-tab {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .rating-center-tips-inline {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+</style>
+
+<script>
+(function() {
+  if (window.__ratingCenterTabsInitialized) return;
+  window.__ratingCenterTabsInitialized = true;
+  let currentController = null;
+
+  function shouldHandleClick(event, anchor) {
+    if (!anchor) return false;
+    if (event.defaultPrevented) return false;
+    if (event.button !== 0) return false;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+    if (anchor.target && anchor.target !== '_self') return false;
+    return true;
+  }
+
+  function executeScripts(root) {
+    root.querySelectorAll('script').forEach(function(oldScript) {
+      const newScript = document.createElement('script');
+      for (const attr of oldScript.attributes) {
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode.replaceChild(newScript, oldScript);
+    });
+  }
+
+  function normalizeUrl(url) {
+    const parsed = new URL(url, window.location.href);
+    parsed.hash = '';
+    return parsed.toString();
+  }
+
+  async function loadRootHtml(url, signal) {
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      signal,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    if (!response.ok) throw new Error('Failed to load page');
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const nextTabs = doc.getElementById('rating-center-tabs');
+    const nextMain = doc.getElementById('rating-center-main');
+    const nextProperties = doc.getElementById('rating-center-properties');
+    const nextTips = doc.getElementById('rating-center-tips');
+    if (!nextTabs || !nextMain || !nextProperties || !nextTips) {
+      throw new Error('Rating center fragments not found');
+    }
+    return { doc, nextTabs, nextMain, nextProperties, nextTips };
+  }
+
+  function replaceFragment(currentNode, nextNode) {
+    const imported = document.importNode(nextNode, true);
+    currentNode.replaceWith(imported);
+    return imported;
+  }
+
+  async function swapRoot(url, pushState) {
+    const currentRoot = document.getElementById('rating-center-root');
+    const currentTabs = document.getElementById('rating-center-tabs');
+    const currentMain = document.getElementById('rating-center-main');
+    const currentProperties = document.getElementById('rating-center-properties');
+    const currentTips = document.getElementById('rating-center-tips');
+    if (!currentRoot) {
+      window.location.href = url;
+      return;
+    }
+    if (!currentTabs || !currentMain || !currentProperties || !currentTips) {
+      window.location.href = url;
+      return;
+    }
+
+    if (currentController) currentController.abort();
+    currentController = new AbortController();
+    currentRoot.classList.add('is-loading');
+    currentRoot.setAttribute('aria-busy', 'true');
+
+    try {
+      const { doc, nextTabs, nextMain, nextProperties, nextTips } = await loadRootHtml(url, currentController.signal);
+      const importedTabs = replaceFragment(currentTabs, nextTabs);
+      const importedMain = replaceFragment(currentMain, nextMain);
+      replaceFragment(currentProperties, nextProperties);
+      replaceFragment(currentTips, nextTips);
+      importedMain.classList.add('is-entering');
+      requestAnimationFrame(function() {
+        importedMain.classList.remove('is-entering');
+        currentRoot.classList.remove('is-loading');
+        currentRoot.removeAttribute('aria-busy');
+      });
+      document.title = doc.title || document.title;
+      if (pushState) history.pushState({ ratingCenter: true }, '', url);
+      executeScripts(importedTabs);
+      executeScripts(importedMain);
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      console.error('Failed to switch rating center tab:', error);
+      window.location.href = url;
+    } finally {
+      currentRoot.classList.remove('is-loading');
+      currentRoot.removeAttribute('aria-busy');
+      currentController = null;
+    }
+  }
+
+  document.addEventListener('click', function(event) {
+    const anchor = event.target.closest('.rating-center-tab');
+    if (!shouldHandleClick(event, anchor)) return;
+    if (normalizeUrl(anchor.href) === normalizeUrl(window.location.href)) return;
+    event.preventDefault();
+    swapRoot(anchor.href, true);
+  });
+
+  window.addEventListener('popstate', function() {
+    if (window.location.pathname.includes('/manage/rating-center')) {
+      swapRoot(window.location.href, false);
+    }
+  });
+})();
+</script>
+{% endblock %}

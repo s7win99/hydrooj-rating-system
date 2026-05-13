@@ -1,0 +1,171 @@
+<div class="manage-section">
+  <h3>{{ _('Update User Rating') }}</h3>
+  <form method="post" action="{{ url('rating_manage') }}">
+    <input type="hidden" name="operation" value="update_rating">
+    <div class="row">
+      <div class="medium-6 columns">
+        <label>{{ _('User ID') }}</label>
+        <input type="number" id="uid-input" name="uid" required placeholder="{{ _('Enter user ID') }}">
+        <div id="user-info" style="margin-top: 5px; color: #666; font-size: 14px;"></div>
+      </div>
+      <div class="medium-6 columns">
+        <label>{{ _('Rating Change') }}</label>
+        <input type="number" name="ratingDelta" required placeholder="{{ _('Enter rating change (e.g., +50, -50)') }}" min="-1000" max="1000">
+        <small style="color: #666;">{{ _('Enter positive or negative value (e.g., +50 or -50)') }}</small>
+      </div>
+    </div>
+    <div class="row">
+      <div class="medium-12 columns">
+        <label>{{ _('Contest Name') }}</label>
+        <input type="text" name="contestName" required placeholder="{{ _('Enter contest name') }}">
+      </div>
+    </div>
+    <div class="row">
+      <div class="medium-12 columns">
+        <label class="checkbox-label">
+          <input type="checkbox" name="increaseContestCount" value="true">
+          <span>{{ _('Increase contest count by 1') }}</span>
+        </label>
+      </div>
+    </div>
+    <div class="row">
+      <div class="medium-12 columns">
+        <button type="submit" class="primary button">{{ _('Update Rating') }}</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<style>
+.manage-section {
+  margin-bottom: 24px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #f9f9f9;
+}
+
+.manage-section h3 {
+  margin-top: 0;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+}
+
+.primary.button {
+  background-color: #007bff;
+  color: white;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-weight: 500;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.checkbox-label input[type="checkbox"] {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.checkbox-label span {
+  display: inline-block;
+  line-height: 1.4;
+}
+
+input[type="text"], input[type="number"] {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  margin-bottom: 15px;
+  color: #1e293b;
+}
+
+small {
+  color: #64748b !important;
+  line-height: 1.65;
+}
+
+#user-info {
+  color: #64748b;
+  line-height: 1.6;
+}
+</style>
+
+<script>
+function initRatingAdminManualTab() {
+  const uidInput = document.getElementById('uid-input');
+  const userInfo = document.getElementById('user-info');
+  let debounceTimer;
+
+  if (uidInput && userInfo) {
+    uidInput.addEventListener('input', function() {
+      clearTimeout(debounceTimer);
+      const uid = this.value.trim();
+
+      if (!uid) {
+        userInfo.innerHTML = '';
+        return;
+      }
+
+      debounceTimer = setTimeout(() => {
+        fetchUserInfo(uid);
+      }, 500);
+    });
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initRatingAdminManualTab, { once: true });
+} else {
+  initRatingAdminManualTab();
+}
+
+async function fetchUserInfo(uid) {
+  const userInfo = document.getElementById('user-info');
+
+  try {
+    userInfo.innerHTML = '<span style="color: #999;">{{ _("Loading...") }}</span>';
+
+    const response = await fetch(`/api/user/${uid}/info`);
+    const data = await response.json();
+
+    if (data.error) {
+      userInfo.innerHTML = `<span style="color: #e74c3c;">{{ _("User not found") }}</span>`;
+    } else {
+      userInfo.innerHTML = `
+        <span style="color: #27ae60;">
+          <strong>${data.displayName}</strong> (${data.username})
+        </span>
+      `;
+    }
+  } catch (error) {
+    console.error('Failed to fetch user info:', error);
+    userInfo.innerHTML = `<span style="color: #e74c3c;">{{ _("Failed to load user info") }}</span>`;
+  }
+}
+</script>

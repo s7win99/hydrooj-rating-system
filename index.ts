@@ -115,6 +115,18 @@ type RatingUpdateInput = {
     date?: Date;
 };
 
+type RatingAdminTab = 'manual' | 'contest' | 'users';
+
+type RatingAdminStats = {
+    totalUsers: number;
+    ratedUsers: number;
+    contestUsers: number;
+    avgRating: number;
+    maxRating: number;
+    activeUsers: number;
+    lastOperationAt: Date | null;
+};
+
 function clampRating(value: number): number {
     return Math.max(0, Math.min(MAX_RATING_VALUE, Math.round(value)));
 }
@@ -285,6 +297,34 @@ function toPublicArchive(archive: any): any {
                 newRating: normalized.newDisplayRating,
             };
         }),
+    };
+}
+
+function normalizeRatingAdminTab(tab?: string): RatingAdminTab {
+    if (tab === 'manual' || tab === 'contest' || tab === 'users') return tab;
+    return 'manual';
+}
+
+async function getRatingAdminStats(): Promise<RatingAdminStats> {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [totalUsers, ratedUsers, contestUsers, avgRating, maxRating, activeUsers, lastArchive] = await Promise.all([
+        UserModel.coll.countDocuments({}),
+        ratingColl.countDocuments({}),
+        ratingColl.countDocuments({ contestCount: { $gt: 0 } }),
+        ratingColl.aggregate([{ $group: { _id: null, avgRating: { $avg: '$displayRating' } } }]).toArray(),
+        ratingColl.findOne({}, { sort: { displayRating: -1 } }),
+        ratingColl.countDocuments({ lastUpdate: { $gte: thirtyDaysAgo } }),
+        ratingArchiveColl.findOne({}, { sort: { operationDate: -1 } }),
+    ]);
+
+    return {
+        totalUsers,
+        ratedUsers,
+        contestUsers,
+        avgRating: avgRating[0]?.avgRating || 0,
+        maxRating: maxRating?.displayRating || 0,
+        activeUsers,
+        lastOperationAt: lastArchive?.operationDate ? new Date(lastArchive.operationDate) : null,
     };
 }
 
@@ -737,10 +777,17 @@ export class RatingModel {
         return true;
     }
 
-    static async updateRatingByDelta(uid: number, delta: number, contestName: string, operatorUid?: number): Promise<void> {
+    static async updateRatingByDelta(
+        uid: number,
+        delta: number,
+        contestName: string,
+        operatorUid?: number,
+        increaseContestCount = false,
+    ): Promise<void> {
         const current = normalizeRatingDoc(await this.get(uid), uid);
         const newInternalRating = clampRating(current.internalRating + delta);
-        const newDisplayRating = calcDisplayRating(newInternalRating, current.contestCount);
+        const newContestCount = current.contestCount + (increaseContestCount ? 1 : 0);
+        const newDisplayRating = calcDisplayRating(newInternalRating, newContestCount);
         const user = await UserModel.getById('system', uid);
         const username = user?.uname || `User${uid}`;
 
@@ -759,7 +806,7 @@ export class RatingModel {
                 newRank: 0,
             }],
             operatorUid,
-            `Manual rating change: ${delta > 0 ? '+' : ''}${delta}`,
+            `Manual rating change: ${delta > 0 ? '+' : ''}${delta}${increaseContestCount ? ' (contestCount +1)' : ''}`,
         );
 
         await this.updateRating({
@@ -770,7 +817,7 @@ export class RatingModel {
             newInternalRating,
             oldDisplayRating: current.displayRating,
             newDisplayRating,
-            contestCount: current.contestCount,
+            contestCount: newContestCount,
         });
     }
 }
@@ -834,20 +881,69 @@ class UserRatingHandler extends Handler {
     }
 }
 
+class RatingCenterHandler extends Handler {
+    async prepare() {
+        this.checkPriv(PRIV.PRIV_EDIT_SYSTEM);
+    }
+
+    @query('tab', Types.String, true)
+    @query('page', Types.PositiveInt, true)
+    @query('search', Types.String, true)
+    async get(domainId: string, tab = 'manual', page = 1, search?: string) {
+        const activeTab = normalizeRatingAdminTab(tab);
+        const stats = await getRatingAdminStats();
+
+        const body: Record<string, any> = {
+            activeTab,
+            stats,
+            page_name: 'manage_rating_center',
+            page: 1,
+            pages: 1,
+            total: 0,
+            search: search || '',
+            contestArchives: [],
+            users: [],
+            contestArchiveTotal: 0,
+        };
+
+        if (activeTab === 'contest') {
+            const { archives, total } = await RatingModel.getArchives(1, 10);
+            body.contestArchives = archives;
+            body.contestArchiveTotal = total;
+        } else if (activeTab === 'users') {
+            const limit = 20;
+            const { users, total } = await RatingModel.getAllUsers(page, limit, search);
+            body.users = users;
+            body.page = page;
+            body.pages = Math.ceil(total / limit);
+            body.total = total;
+        }
+
+        this.response.template = 'rating_center.html';
+        this.response.body = body;
+    }
+}
+
 class RatingManageHandler extends Handler {
     async prepare() {
         this.checkPriv(PRIV.PRIV_EDIT_SYSTEM);
     }
 
     async get() {
-        this.response.template = 'rating_manage.html';
-        this.response.body = {};
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'manual' } });
     }
 
     @param('uid', Types.PositiveInt)
     @param('ratingDelta', Types.Int)
     @param('contestName', Types.String)
-    async postUpdateRating(domainId: string, uid: number, ratingDelta: number, contestName: string) {
+    @param('increaseContestCount', Types.Boolean, true)
+    async postUpdateRating(
+        domainId: string,
+        uid: number,
+        ratingDelta: number,
+        contestName: string,
+        increaseContestCount?: boolean,
+    ) {
         if (Math.abs(ratingDelta) > 1000) {
             throw new ValidationError('Rating change must be between -1000 and +1000');
         }
@@ -856,8 +952,14 @@ class RatingManageHandler extends Handler {
         const user = await UserModel.getById(domainId, uid);
         if (!user) throw new NotFoundError('User not found');
 
-        await RatingModel.updateRatingByDelta(uid, ratingDelta, contestName.trim(), this.user._id);
-        this.response.redirect = this.url('rating_manage');
+        await RatingModel.updateRatingByDelta(
+            uid,
+            ratingDelta,
+            contestName.trim(),
+            this.user._id,
+            !!increaseContestCount,
+        );
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'manual' } });
     }
 }
 
@@ -867,9 +969,7 @@ class ContestRatingComputeHandler extends Handler {
     }
 
     async get() {
-        const { archives, total } = await RatingModel.getArchives(1, 10);
-        this.response.template = 'contest_rating_compute.html';
-        this.response.body = { archives, total };
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'contest' } });
     }
 
     @param('csvFile', Types.File, true)
@@ -976,7 +1076,7 @@ class ContestRatingComputeHandler extends Handler {
             }
 
             await RatingModel.processContestResults(contestName.trim(), participants, this.user._id);
-            this.response.redirect = this.url('contest_rating_compute');
+            this.response.redirect = this.url('manage_rating_center', { query: { tab: 'contest' } });
         } catch (error) {
             if (error instanceof ValidationError) throw error;
             throw new ValidationError(`Failed to process CSV: ${error?.message ?? String(error)}`);
@@ -986,7 +1086,7 @@ class ContestRatingComputeHandler extends Handler {
     async postRevertLast() {
         const success = await RatingModel.revertLastOperation();
         if (!success) throw new ValidationError('No operation to revert or revert failed');
-        this.response.redirect = this.url('contest_rating_compute');
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'contest' } });
     }
 }
 
@@ -1028,6 +1128,31 @@ class RatingUserApiHandler extends Handler {
     }
 }
 
+class RatingTopHandler extends Handler {
+    @query('limit', Types.PositiveInt, true)
+    async get(domainId: string, limit = 10) {
+        const normalizedLimit = Math.min(Math.max(limit, 1), 50);
+        const ratings = await RatingModel.getLeaderboard(1, normalizedLimit);
+        const users = ratings.length
+            ? await UserModel.getList(domainId, ratings.map((rating) => rating.uid))
+            : {};
+
+        this.response.body = ratings.map((rating, index) => {
+            const user = users[rating.uid];
+            const uname = user?.uname || `User${rating.uid}`;
+            return {
+                uid: rating.uid,
+                rank: index + 1,
+                uname,
+                displayName: user?.displayName || uname,
+                rating: rating.displayRating,
+                maxRating: rating.maxDisplayRating,
+                contestCount: rating.contestCount,
+            };
+        });
+    }
+}
+
 class UserInfoApiHandler extends Handler {
     @param('uid', Types.PositiveInt)
     async get(domainId: string, uid: number) {
@@ -1053,16 +1178,10 @@ class UserRatingManageHandler extends Handler {
     @query('page', Types.PositiveInt, true)
     @query('search', Types.String, true)
     async get(domainId: string, page = 1, search?: string) {
-        const limit = 20;
-        const { users, total } = await RatingModel.getAllUsers(page, limit, search);
-        this.response.template = 'user_rating_manage.html';
-        this.response.body = {
-            users,
-            page,
-            pages: Math.ceil(total / limit),
-            total,
-            search: search || '',
-        };
+        const query: Record<string, any> = { tab: 'users' };
+        if (page > 1) query.page = page;
+        if (search) query.search = search;
+        this.response.redirect = this.url('manage_rating_center', { query });
     }
 
     @param('operation', Types.String)
@@ -1080,13 +1199,13 @@ class UserRatingManageHandler extends Handler {
         const user = await UserModel.getById(domainId, uid);
         if (!user) throw new NotFoundError('User not found');
         await RatingModel.initializeUserRating(uid, initialRating);
-        this.response.redirect = this.url('user_rating_manage');
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'users' } });
     }
 
     async postInitializeAll() {
         const initialRating = parseInt(this.request.body.initialRating) || INITIAL_DISPLAY_RATING;
         await RatingModel.initializeAllUsersRating(initialRating);
-        this.response.redirect = this.url('user_rating_manage');
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'users' } });
     }
 
     async postRemoveContest() {
@@ -1094,7 +1213,7 @@ class UserRatingManageHandler extends Handler {
         const contestName = this.request.body.contestName;
         const success = await RatingModel.removeContestRating(uid, contestName, this.user._id);
         if (!success) throw new NotFoundError('Contest record not found');
-        this.response.redirect = this.url('user_rating_manage');
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'users' } });
     }
 
     async postModifyContest() {
@@ -1104,26 +1223,27 @@ class UserRatingManageHandler extends Handler {
         const newRank = this.request.body.newRank ? parseInt(this.request.body.newRank) : undefined;
         const success = await RatingModel.modifyContestRating(uid, contestName, newRating, newRank, this.user._id);
         if (!success) throw new NotFoundError('Contest record not found');
-        this.response.redirect = this.url('user_rating_manage');
+        this.response.redirect = this.url('manage_rating_center', { query: { tab: 'users' } });
     }
 }
 
 export async function apply(ctx: Context) {
+    ctx.Route('manage_rating_center', '/manage/rating-center', RatingCenterHandler, PRIV.PRIV_EDIT_SYSTEM);
     ctx.Route('rating_list', '/rating', RatingListHandler, PERM.PERM_VIEW_RANKING);
     ctx.Route('user_rating', '/user/:uid/rating', UserRatingHandler);
     ctx.Route('rating_manage', '/manage/rating', RatingManageHandler, PRIV.PRIV_EDIT_SYSTEM);
     ctx.Route('user_rating_manage', '/manage/user-rating', UserRatingManageHandler, PRIV.PRIV_EDIT_SYSTEM);
     ctx.Route('contest_rating_compute', '/manage/rating/contest', ContestRatingComputeHandler, PRIV.PRIV_EDIT_SYSTEM);
     ctx.Route('rating_stats', '/api/rating/stats', RatingStatsHandler, PERM.PERM_VIEW_RANKING);
+    ctx.Route('rating_top_api', '/api/rating/top', RatingTopHandler, PERM.PERM_VIEW_RANKING);
     ctx.Route('rating_user_api', '/api/rating/user/:uid', RatingUserApiHandler);
     ctx.Route('user_info_api', '/api/user/:uid/info', UserInfoApiHandler);
 
     ctx.injectUI('Nav', 'rating_list', { prefix: 'rating' });
-    ctx.injectUI('ControlPanel', 'rating_manage', { icon: 'chart-line' });
-    ctx.injectUI('ControlPanel', 'contest_rating_compute', { icon: 'trophy' });
-    ctx.injectUI('ControlPanel', 'user_rating_manage', { icon: 'users' });
+    ctx.injectUI('ControlPanel', 'manage_rating_center', { icon: 'chart-line' });
 
     ctx.i18n.load('zh', {
+        rating_center: 'Rating管理中心',
         rating_manage: 'Rating修改',
         contest_rating_compute: '比赛Rating计算',
         user_rating_manage: '用户Rating管理',
@@ -1143,6 +1263,268 @@ export async function apply(ctx: Context) {
         'Rating Management': 'Rating Management',
         'Contest Rating Compute': 'Contest Rating Compute',
         'User Rating Management': 'User Rating Management',
+    });
+
+    ctx.i18n.load('zh', {
+        'Rating Management Center': 'Rating管理中心',
+        Overview: '概览',
+        'Manual Update': '手动修改',
+        'Quick Actions': '快捷操作',
+        'System Notes': '系统说明',
+        'Recent Operations': '最近操作',
+        'Rated Users': '已有Rating用户数',
+        'Users With Contests': '有比赛记录用户数',
+        'Manual rating updates do not increase contest count unless you explicitly check the option.': '手动修改Rating默认不会增加contestCount，除非你显式勾选对应选项。',
+        'The leaderboard only includes users whose contest count is greater than zero.': '排行榜当前只显示contestCount大于0的用户。',
+        'The homepage rating module only shows the top N users configured in homepage settings.': '首页Rating模块只显示首页设置中配置的前N名用户。',
+        'Legacy manage routes now redirect into this center while keeping the original POST handlers.': '旧的管理路由现在会跳转到管理中心，同时仍保留原有POST处理逻辑。',
+    });
+    ctx.i18n.load('en', {
+        rating_center: 'Rating Management Center',
+        'Rating Management Center': 'Rating Management Center',
+        Overview: 'Overview',
+        'Manual Update': 'Manual Update',
+        'Quick Actions': 'Quick Actions',
+        'System Notes': 'System Notes',
+        'Recent Operations': 'Recent Operations',
+        'Rated Users': 'Rated Users',
+        'Users With Contests': 'Users With Contests',
+        'Manual rating updates do not increase contest count unless you explicitly check the option.': 'Manual rating updates do not increase contest count unless you explicitly check the option.',
+        'The leaderboard only includes users whose contest count is greater than zero.': 'The leaderboard only includes users whose contest count is greater than zero.',
+        'The homepage rating module only shows the top N users configured in homepage settings.': 'The homepage rating module only shows the top N users configured in homepage settings.',
+        'Legacy manage routes now redirect into this center while keeping the original POST handlers.': 'Legacy manage routes now redirect into this center while keeping the original POST handlers.',
+    });
+
+    ctx.i18n.load('zh', {
+        rating_center: 'Rating 管理中心',
+        manage_rating_center: 'Rating 管理中心',
+        rating_manage: 'Rating 修改',
+        contest_rating_compute: '比赛 Rating 计算',
+        user_rating_manage: '用户 Rating 管理',
+        rating_list: 'Rating 排行榜',
+        'Rating Leaderboard': 'Rating 排行榜',
+        'Rating Management': 'Rating 管理',
+        'Contest Rating Compute': '比赛 Rating 计算',
+        'User Rating Management': '用户 Rating 管理',
+        'Rating Management Center': 'Rating 管理中心',
+        Overview: '概览',
+        'Manual Update': '手动修改',
+        'Quick Actions': '快捷操作',
+        'System Notes': '系统说明',
+        'Recent Operations': '最近操作',
+        'Rated Users': '已有 Rating 用户数',
+        'Users With Contests': '有比赛记录用户数',
+        'Manual rating updates do not increase contest count unless you explicitly check the option.': '手动修改 Rating 默认不会增加 contestCount，除非你显式勾选对应选项。',
+        'The leaderboard only includes users whose contest count is greater than zero.': '当前排行榜只显示 contestCount 大于 0 的用户。',
+        'The homepage rating module only shows the top N users configured in homepage settings.': '首页 Rating 模块只显示首页设置中配置的前 N 名用户。',
+        'Legacy manage routes now redirect into this center while keeping the original POST handlers.': '旧的管理路由现在会跳转到本管理中心，同时保留原有 POST 处理逻辑。',
+        'Update User Rating': '修改用户 Rating',
+        'User ID': '用户 ID',
+        'Enter user ID': '请输入用户 ID',
+        'Rating Change': 'Rating 变化值',
+        'Enter rating change (e.g., +50, -50)': '请输入 Rating 变化值（如 +50、-50）',
+        'Enter positive or negative value (e.g., +50 or -50)': '支持输入正数或负数，例如 +50 或 -50',
+        'Contest Name': '比赛名称',
+        'Enter contest name': '请输入比赛名称',
+        'Increase contest count by 1': '参赛次数加 1',
+        'Checked users can appear in the leaderboard if it requires at least one rated contest.': '勾选后，如果排行榜要求至少参加过一场计分比赛，该用户即可上榜。',
+        'Update Rating': '更新 Rating',
+        'Failed to load user info': '加载用户信息失败',
+        'Import Contest Results': '导入比赛结果',
+        'Upload contest ranking CSV file to preview and calculate rating changes using Pairwise Elo formula': '上传比赛排名 CSV 文件进行预览，并使用 Pairwise Elo 公式计算 Rating 变化。',
+        'CSV File': 'CSV 文件',
+        'Contest name will be auto-filled from filename': '比赛名称会根据文件名自动填充',
+        'Preview CSV Data': '预览 CSV 数据',
+        'CSV Preview': 'CSV 预览',
+        'Valid Participants': '有效参赛者',
+        'Filtered Out': '已过滤',
+        Status: '状态',
+        Note: '说明',
+        'Confirm Import and Calculate Ratings': '确认导入并计算 Rating',
+        Cancel: '取消',
+        'Revert Operations': '回退操作',
+        'Revert the most recent rating operation (contest import or manual update)': '回退最近一次 Rating 操作（比赛导入或手动修改）。',
+        'Revert Last Operation': '回退最近一次操作',
+        Participants: '参与人数',
+        'Show Details': '查看详情',
+        'Hide Details': '收起详情',
+        'Old Rating': '旧 Rating',
+        'New Rating': '新 Rating',
+        Change: '变化值',
+        'No operation history found.': '暂无操作记录。',
+        'Error parsing CSV file': '解析 CSV 文件时出错',
+        'Please select a CSV file and ensure contest name is filled': '请选择 CSV 文件并确保已填写比赛名称。',
+        'CSV file must contain at least header and one data row': 'CSV 文件至少需要包含表头和一行数据。',
+        'CSV must contain rank and username columns': 'CSV 必须包含排名和用户名两列。',
+        'No submissions': '无提交记录',
+        'Rank 0 (excluded)': '排名为 0（已排除）',
+        'Will be included in rating calculation': '将参与 Rating 计算',
+        Included: '已纳入',
+        Excluded: '已排除',
+        'Batch Operations': '批量操作',
+        'Initialize All Users Rating': '初始化所有用户的 Rating',
+        'Export User Data': '导出用户数据',
+        'Search Users': '搜索用户',
+        'Search by username, email, or user ID': '按用户名、邮箱或用户 ID 搜索',
+        Search: '搜索',
+        Clear: '清空',
+        'User List': '用户列表',
+        'Contest Count': '参赛次数',
+        'Last Update': '最后更新时间',
+        Actions: '操作',
+        History: '历史',
+        Initialize: '初始化',
+        'Manage Contests': '管理比赛记录',
+        Previous: '上一页',
+        Next: '下一页',
+        'No users found.': '未找到用户。',
+        'Initialize User Rating': '初始化用户 Rating',
+        'Warning:': '警告：',
+        'This will reset all users\' ratings and delete their history records.': '这将重置所有用户的 Rating，并删除他们的历史记录。',
+        'Are you sure? This cannot be undone.': '你确定吗？此操作无法撤销。',
+        'Initialize All': '全部初始化',
+        'This will reset the user\'s rating and delete their history records.': '这将重置该用户的 Rating，并删除其历史记录。',
+        'User Contest History': '用户比赛历史',
+        'Manage Contest Records': '管理比赛记录',
+        'No contest history found.': '暂无比赛历史记录。',
+        'Failed to load history data.': '加载历史数据失败。',
+        'Click on a contest to modify or remove it:': '点击某场比赛可修改或删除其记录：',
+        'No contest records found.': '暂无比赛记录。',
+        'Failed to load contest data.': '加载比赛数据失败。',
+        'Enter new rating for contest': '请输入该比赛的新 Rating',
+        'Enter new rank for contest': '请输入该比赛的新排名',
+        Modify: '修改',
+        Remove: '删除',
+        'Modify contest': '修改比赛',
+        'rating to': '的 Rating 为',
+        'Remove contest': '删除比赛',
+        'from user\'s history?': '从该用户历史中移除吗？',
+        'Export functionality will be implemented soon.': '导出功能即将支持。',
+        'No rating data available yet.': '暂无 Rating 数据。',
+        'Failed to load rating leaderboard.': '加载 Rating 排行榜失败。',
+        'Manage rating updates, contest computations, and user maintenance from one place.': '在一个页面中统一处理 Rating 调整、比赛计算与用户维护。',
+        'Adjust rating and contest count for a single user.': '为单个用户调整 Rating 与参赛次数。',
+        'Import contest results, preview calculations, and revert recent operations.': '导入比赛结果、预览计算，并支持回退最近操作。',
+        'Search users, inspect history, and manage contest records.': '搜索用户、查看历史，并管理比赛记录。',
+        'CSV files must include # (rank) and username columns. Only users with submissions are included, and rank 0 entries are excluded.': 'CSV 需包含 #（排名）和 username（用户名）列；只有有提交记录的用户会参与 Rating 计算，排名为 0 的记录会被排除。',
+        'Current Tab': '当前页面',
+        'Quick Tips': '提示',
+    });
+
+    ctx.i18n.load('en', {
+        rating_center: 'Rating Management Center',
+        manage_rating_center: 'Rating Management Center',
+        rating_manage: 'Rating Management',
+        contest_rating_compute: 'Contest Rating Compute',
+        user_rating_manage: 'User Rating Management',
+        rating_list: 'Rating Leaderboard',
+        'Rating Leaderboard': 'Rating Leaderboard',
+        'Rating Management': 'Rating Management',
+        'Contest Rating Compute': 'Contest Rating Compute',
+        'User Rating Management': 'User Rating Management',
+        'Rating Management Center': 'Rating Management Center',
+        Overview: 'Overview',
+        'Manual Update': 'Manual Update',
+        'Quick Actions': 'Quick Actions',
+        'System Notes': 'System Notes',
+        'Recent Operations': 'Recent Operations',
+        'Rated Users': 'Rated Users',
+        'Users With Contests': 'Users With Contests',
+        'Manual rating updates do not increase contest count unless you explicitly check the option.': 'Manual rating updates do not increase contest count unless you explicitly check the option.',
+        'The leaderboard only includes users whose contest count is greater than zero.': 'The leaderboard only includes users whose contest count is greater than zero.',
+        'The homepage rating module only shows the top N users configured in homepage settings.': 'The homepage rating module only shows the top N users configured in homepage settings.',
+        'Legacy manage routes now redirect into this center while keeping the original POST handlers.': 'Legacy manage routes now redirect into this center while keeping the original POST handlers.',
+        'Update User Rating': 'Update User Rating',
+        'User ID': 'User ID',
+        'Enter user ID': 'Enter user ID',
+        'Rating Change': 'Rating Change',
+        'Enter rating change (e.g., +50, -50)': 'Enter rating change (e.g., +50, -50)',
+        'Enter positive or negative value (e.g., +50 or -50)': 'Enter positive or negative value (e.g., +50 or -50)',
+        'Contest Name': 'Contest Name',
+        'Enter contest name': 'Enter contest name',
+        'Increase contest count by 1': 'Increase contest count by 1',
+        'Checked users can appear in the leaderboard if it requires at least one rated contest.': 'Checked users can appear in the leaderboard if it requires at least one rated contest.',
+        'Update Rating': 'Update Rating',
+        'Failed to load user info': 'Failed to load user info',
+        'Import Contest Results': 'Import Contest Results',
+        'Upload contest ranking CSV file to preview and calculate rating changes using Pairwise Elo formula': 'Upload contest ranking CSV file to preview and calculate rating changes using Pairwise Elo formula',
+        'CSV File': 'CSV File',
+        'Contest name will be auto-filled from filename': 'Contest name will be auto-filled from filename',
+        'Preview CSV Data': 'Preview CSV Data',
+        'CSV Preview': 'CSV Preview',
+        'Valid Participants': 'Valid Participants',
+        'Filtered Out': 'Filtered Out',
+        Status: 'Status',
+        Note: 'Note',
+        'Confirm Import and Calculate Ratings': 'Confirm Import and Calculate Ratings',
+        Cancel: 'Cancel',
+        'Revert Operations': 'Revert Operations',
+        'Revert the most recent rating operation (contest import or manual update)': 'Revert the most recent rating operation (contest import or manual update)',
+        'Revert Last Operation': 'Revert Last Operation',
+        Participants: 'Participants',
+        'Show Details': 'Show Details',
+        'Hide Details': 'Hide Details',
+        'Old Rating': 'Old Rating',
+        'New Rating': 'New Rating',
+        Change: 'Change',
+        'No operation history found.': 'No operation history found.',
+        'Error parsing CSV file': 'Error parsing CSV file',
+        'Please select a CSV file and ensure contest name is filled': 'Please select a CSV file and ensure contest name is filled',
+        'CSV file must contain at least header and one data row': 'CSV file must contain at least header and one data row',
+        'CSV must contain rank and username columns': 'CSV must contain rank and username columns',
+        'No submissions': 'No submissions',
+        'Rank 0 (excluded)': 'Rank 0 (excluded)',
+        'Will be included in rating calculation': 'Will be included in rating calculation',
+        Included: 'Included',
+        Excluded: 'Excluded',
+        'Batch Operations': 'Batch Operations',
+        'Initialize All Users Rating': 'Initialize All Users Rating',
+        'Export User Data': 'Export User Data',
+        'Search Users': 'Search Users',
+        'Search by username, email, or user ID': 'Search by username, email, or user ID',
+        Search: 'Search',
+        Clear: 'Clear',
+        'User List': 'User List',
+        'Contest Count': 'Contest Count',
+        'Last Update': 'Last Update',
+        Actions: 'Actions',
+        History: 'History',
+        Initialize: 'Initialize',
+        'Manage Contests': 'Manage Contests',
+        Previous: 'Previous',
+        Next: 'Next',
+        'No users found.': 'No users found.',
+        'Initialize User Rating': 'Initialize User Rating',
+        'Warning:': 'Warning:',
+        'This will reset all users\' ratings and delete their history records.': 'This will reset all users\' ratings and delete their history records.',
+        'Are you sure? This cannot be undone.': 'Are you sure? This cannot be undone.',
+        'Initialize All': 'Initialize All',
+        'This will reset the user\'s rating and delete their history records.': 'This will reset the user\'s rating and delete their history records.',
+        'User Contest History': 'User Contest History',
+        'Manage Contest Records': 'Manage Contest Records',
+        'No contest history found.': 'No contest history found.',
+        'Failed to load history data.': 'Failed to load history data.',
+        'Click on a contest to modify or remove it:': 'Click on a contest to modify or remove it:',
+        'No contest records found.': 'No contest records found.',
+        'Failed to load contest data.': 'Failed to load contest data.',
+        'Enter new rating for contest': 'Enter new rating for contest',
+        'Enter new rank for contest': 'Enter new rank for contest',
+        Modify: 'Modify',
+        Remove: 'Remove',
+        'Modify contest': 'Modify contest',
+        'rating to': 'rating to',
+        'Remove contest': 'Remove contest',
+        'from user\'s history?': 'from user\'s history?',
+        'Export functionality will be implemented soon.': 'Export functionality will be implemented soon.',
+        'No rating data available yet.': 'No rating data available yet.',
+        'Failed to load rating leaderboard.': 'Failed to load rating leaderboard.',
+        'Manage rating updates, contest computations, and user maintenance from one place.': 'Manage rating updates, contest computations, and user maintenance from one place.',
+        'Adjust rating and contest count for a single user.': 'Adjust rating and contest count for a single user.',
+        'Import contest results, preview calculations, and revert recent operations.': 'Import contest results, preview calculations, and revert recent operations.',
+        'Search users, inspect history, and manage contest records.': 'Search users, inspect history, and manage contest records.',
+        'CSV files must include # (rank) and username columns. Only users with submissions are included, and rank 0 entries are excluded.': 'CSV files must include # (rank) and username columns. Only users with submissions are included, and rank 0 entries are excluded.',
+        'Current Tab': 'Current Tab',
+        'Quick Tips': 'Quick Tips',
     });
 
     ctx.on('contest/finish', async (domainId, tid) => {

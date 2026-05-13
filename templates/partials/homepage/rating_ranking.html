@@ -1,0 +1,236 @@
+{% set defaultLimit = payload or 10 %}
+<div class="section rating-ranking-homepage" data-limit="{{ defaultLimit }}">
+  <div class="section__header">
+    <h1 class="section__title">{{ _('Rating Leaderboard') }}</h1>
+  </div>
+  <div class="section__body no-padding" style="overflow: hidden">
+    <div class="rating-ranking-status" data-role="status">{{ _('Loading...') }}</div>
+    <table class="rating-ranking-table" data-role="table" style="display: none;">
+      <colgroup>
+        <col class="col--rank">
+        <col class="col--user">
+        <col class="col--rating">
+        <col class="col--contests">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="col--rank">{{ _('Rank') }}</th>
+          <th class="col--user">{{ _('User') }}</th>
+          <th class="col--rating">Rating</th>
+          <th class="col--contests">{{ _('Contests') }}</th>
+        </tr>
+      </thead>
+      <tbody data-role="tbody"></tbody>
+    </table>
+  </div>
+  <ul class="pager pager-bottom"><li>
+    <a class="pager__item next link" href="{{ url('rating_list') }}">{{ _('More') }} ></a>
+  </li></ul>
+</div>
+
+<style>
+  .rating-ranking-homepage .rating-ranking-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    white-space: nowrap;
+    font-size: 0.875rem;
+  }
+
+  .rating-ranking-homepage .rating-ranking-table th,
+  .rating-ranking-homepage .rating-ranking-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.8;
+  }
+
+  .rating-ranking-homepage .rating-ranking-table th {
+    padding: 13px 16px;
+    color: #888;
+    font-size: 0.875rem;
+    font-weight: normal;
+    border-bottom: 1px solid #e5e5e5;
+  }
+
+  .rating-ranking-homepage .rating-ranking-table td {
+    padding: 10px 16px;
+    border-top: 1px solid #e5e5e5;
+    color: #333;
+    background: #fff;
+  }
+
+  .rating-ranking-homepage .rating-ranking-table tbody tr:nth-child(even) td {
+    background: #fafafa;
+  }
+
+  .rating-ranking-homepage .rating-ranking-status {
+    padding: 20px 16px;
+    color: #666;
+    text-align: center;
+  }
+
+  .rating-ranking-homepage .col--rank,
+  .rating-ranking-homepage .col--rating,
+  .rating-ranking-homepage .col--contests {
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .rating-ranking-homepage tbody,
+  .rating-ranking-homepage tbody tr,
+  .rating-ranking-homepage tbody td {
+    color: #333;
+  }
+
+  .rating-ranking-homepage tbody td {
+    vertical-align: middle;
+  }
+
+  .rating-ranking-homepage .col--rank {
+    width: 72px;
+  }
+
+  .rating-ranking-homepage .col--rating,
+  .rating-ranking-homepage .col--contests {
+    width: 96px;
+  }
+
+  .rating-ranking-homepage .rating-user {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    color: #333 !important;
+    text-decoration: none;
+  }
+
+  .rating-ranking-homepage .rating-user__name {
+    font-weight: 600;
+    color: #333;
+  }
+
+  .rating-ranking-homepage .rating-user__uname {
+    color: #888;
+    font-size: 0.9em;
+  }
+
+  .rating-ranking-homepage .rating-value {
+    font-weight: 600;
+  }
+
+  .rating-ranking-homepage .col--contests {
+    color: #333;
+  }
+
+  .rating-ranking-homepage .rating-red { color: #ff0000; }
+  .rating-ranking-homepage .rating-orange { color: #ff8c00; }
+  .rating-ranking-homepage .rating-purple { color: #aa00aa; }
+  .rating-ranking-homepage .rating-blue { color: #0000ff; }
+  .rating-ranking-homepage .rating-cyan { color: #03a89e; }
+  .rating-ranking-homepage .rating-green { color: #008000; }
+  .rating-ranking-homepage .rating-gray { color: #808080; }
+</style>
+
+<script data-role="rating-ranking-script">
+  (function () {
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, function (char) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[char];
+      });
+    }
+
+    function getRatingColorClass(rating) {
+      if (rating >= 2400) return 'rating-red';
+      if (rating >= 2100) return 'rating-orange';
+      if (rating >= 1900) return 'rating-purple';
+      if (rating >= 1600) return 'rating-blue';
+      if (rating >= 1400) return 'rating-cyan';
+      if (rating >= 1200) return 'rating-green';
+      return 'rating-gray';
+    }
+
+    function setStatus(container, message, isError) {
+      var status = container.querySelector('[data-role="status"]');
+      var table = container.querySelector('[data-role="table"]');
+      status.textContent = message;
+      status.style.display = '';
+      status.style.color = isError ? '#c0392b' : '#666';
+      table.style.display = 'none';
+    }
+
+    function renderRows(container, items) {
+      var tbody = container.querySelector('[data-role="tbody"]');
+      var status = container.querySelector('[data-role="status"]');
+      var table = container.querySelector('[data-role="table"]');
+      tbody.innerHTML = items.map(function (item) {
+        var displayName = item.displayName || item.uname || ('{{ _("User") }}' + item.uid);
+        var uname = item.uname || displayName;
+        var unameHtml = displayName !== uname
+          ? '<span class="rating-user__uname">@' + escapeHtml(uname) + '</span>'
+          : '';
+        return ''
+          + '<tr>'
+          + '<td class="col--rank">' + escapeHtml(item.rank) + '</td>'
+          + '<td class="col--user"><a class="typo-a rating-user" href="/user/' + encodeURIComponent(item.uid) + '/rating">'
+          + '<span class="rating-user__name">' + escapeHtml(displayName) + '</span>'
+          + unameHtml
+          + '</a></td>'
+          + '<td class="col--rating"><span class="rating-value ' + getRatingColorClass(Number(item.rating) || 0) + '">' + escapeHtml(item.rating) + '</span></td>'
+          + '<td class="col--contests">' + escapeHtml(item.contestCount) + '</td>'
+          + '</tr>';
+      }).join('');
+      status.style.display = 'none';
+      table.style.display = '';
+    }
+
+    function loadLeaderboard(container) {
+      var rawLimit = parseInt(container.getAttribute('data-limit'), 10);
+      var limit = rawLimit > 0 ? rawLimit : 10;
+      if (limit > 50) limit = 50;
+
+      setStatus(container, '{{ _("Loading...") }}', false);
+      fetch('/api/rating/top?limit=' + encodeURIComponent(limit), { credentials: 'same-origin' })
+        .then(function (response) {
+          if (!response.ok) throw new Error('Request failed');
+          return response.json();
+        })
+        .then(function (items) {
+          if (!Array.isArray(items) || !items.length) {
+            setStatus(container, '{{ _("No rating data available yet.") }}', false);
+            return;
+          }
+          renderRows(container, items);
+        })
+        .catch(function () {
+          setStatus(container, '{{ _("Failed to load rating leaderboard.") }}', true);
+        });
+    }
+
+    function findContainer(script) {
+      if (!script) return null;
+      var node = script.parentElement;
+      while (node) {
+        if (node.classList && node.classList.contains('rating-ranking-homepage')) return node;
+        node = node.parentElement;
+      }
+      node = script.previousElementSibling;
+      while (node) {
+        if (node.classList && node.classList.contains('rating-ranking-homepage')) return node;
+        node = node.previousElementSibling;
+      }
+      return null;
+    }
+
+    var script = document.currentScript;
+    var container = findContainer(script);
+    if (container && !container.getAttribute('data-loaded')) {
+      container.setAttribute('data-loaded', 'true');
+      loadLeaderboard(container);
+    }
+  })();
+</script>

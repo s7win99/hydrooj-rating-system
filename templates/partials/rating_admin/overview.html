@@ -1,0 +1,164 @@
+<div class="rating-admin-overview-grid">
+<div class="manage-section">
+  <h3>{{ _('Quick Actions') }}</h3>
+  <div class="rating-admin-overview-actions">
+    <a class="primary button rating-admin-overview-action" href="{{ url('rating_center', query={tab:'manual'}) }}">
+      <span class="rating-admin-overview-action__eyebrow">Manual</span>
+      <span class="rating-admin-overview-action__title">{{ _('Manual Update') }}</span>
+      <span class="rating-admin-overview-action__desc">{{ _('Adjust rating and contest count for a single user.') }}</span>
+    </a>
+    <a class="secondary button rating-admin-overview-action" href="{{ url('rating_center', query={tab:'contest'}) }}">
+      <span class="rating-admin-overview-action__eyebrow">Contest</span>
+      <span class="rating-admin-overview-action__title">{{ _('Contest Rating Compute') }}</span>
+      <span class="rating-admin-overview-action__desc">{{ _('Import contest results, preview calculations, and revert recent operations.') }}</span>
+    </a>
+    <a class="secondary button rating-admin-overview-action" href="{{ url('rating_center', query={tab:'users'}) }}">
+      <span class="rating-admin-overview-action__eyebrow">Users</span>
+      <span class="rating-admin-overview-action__title">{{ _('User Rating Management') }}</span>
+      <span class="rating-admin-overview-action__desc">{{ _('Search users, inspect history, and manage contest records.') }}</span>
+    </a>
+  </div>
+</div>
+
+<div class="manage-section">
+  <h3>{{ _('System Notes') }}</h3>
+  <ul class="rating-admin-overview-notes">
+    <li>{{ _('Manual rating updates do not increase contest count unless you explicitly check the option.') }}</li>
+    <li>{{ _('The leaderboard only includes users whose contest count is greater than zero.') }}</li>
+    <li>{{ _('The homepage rating module only shows the top N users configured in homepage settings.') }}</li>
+    <li>{{ _('Legacy manage routes now redirect into this center while keeping the original POST handlers.') }}</li>
+  </ul>
+</div>
+
+<div class="manage-section">
+  <h3>{{ _('Recent Operations') }}</h3>
+  {% if recentArchives.length %}
+    <div class="archive-list">
+      {% for archive in recentArchives %}
+        <div class="archive-item">
+          <div class="archive-header">
+            <h4>{{ archive.contestName }}</h4>
+            <span class="archive-meta">
+              {{ archive.operationType|title }} - {{ datetimeSpan(archive.operationDate, false, 'YYYY-MM-DD HH:mm:ss')|safe }}
+              {% if archive.operatorUid %} by User #{{ archive.operatorUid }}{% endif %}
+            </span>
+          </div>
+          {% if archive.description %}
+            <p class="archive-description">{{ archive.description }}</p>
+          {% endif %}
+          <div class="participants-summary">
+            <strong>{{ _('Participants') }}:</strong> {{ archive.participants|length }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>{{ _('No operation history found.') }}</p>
+  {% endif %}
+</div>
+</div>
+
+<style>
+.rating-admin-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.rating-admin-overview-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.rating-admin-overview-action {
+  display: flex !important;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
+  min-height: 180px;
+  padding: 20px !important;
+  border-radius: 18px !important;
+  text-align: left !important;
+  box-sizing: border-box;
+  white-space: normal !important;
+  overflow: visible !important;
+}
+
+.rating-admin-overview-action.secondary.button {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+}
+
+.rating-admin-overview-action__eyebrow {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rating-admin-overview-action.secondary .rating-admin-overview-action__eyebrow {
+  color: #2563eb;
+}
+
+.rating-admin-overview-action__title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.rating-admin-overview-action__desc {
+  display: block;
+  max-width: 100%;
+  color: inherit;
+  opacity: 0.82;
+  line-height: 1.65;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rating-admin-overview-notes {
+  margin: 0;
+  padding-left: 0;
+  color: #475569;
+  line-height: 1.8;
+  list-style: none;
+}
+
+.rating-admin-overview-notes li {
+  position: relative;
+  padding-left: 22px;
+}
+
+.rating-admin-overview-notes li + li {
+  margin-top: 10px;
+}
+
+.rating-admin-overview-notes li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.72em;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb, #22c55e);
+}
+
+@media (max-width: 900px) {
+  .rating-admin-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
